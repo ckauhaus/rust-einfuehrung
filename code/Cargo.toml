@@ -1,0 +1,8 @@
+[package]
+name = "rust-talk"
+version = "0.1.0"
+authors = ["Christian Kauhaus <kc@flyingcircus.io>"]
+edition = "2018"
+
+[workspace]
+members = ["guess", "mandelbrot", "trump-o-meter", "temperature"]
