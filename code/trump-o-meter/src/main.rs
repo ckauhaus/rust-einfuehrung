@@ -11,7 +11,17 @@ type Occurences = Vec<usize>;
 
 // Site name -> URL
 #[derive(Deserialize, Debug)]
-struct Newssites<'a>(#[serde(borrow)] HashMap<&'a str, &'a str>);
+struct Newssites(HashMap<String, String>);
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let json = fs::read_to_string("newssites.json")?;
+    let sites: Newssites = serde_json::from_str(&json)?;
+    drop(json);
+    let tasks: Vec<_> = sites.0.iter().map(|(site, url)| print(site, url)).collect();
+    future::join_all(tasks).await;
+    Ok(())
+}
 
 async fn check(url: &str) -> Result<Occurences, Box<dyn Error>> {
     let response = reqwest::get(url).await?;
@@ -44,13 +54,4 @@ async fn print(site: &str, url: &str) {
         }
         Err(e) => println!("{:12} Error: {}", site, e),
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let json = fs::read_to_string("newssites.json")?;
-    let sites: Newssites = serde_json::from_str(&json)?;
-    let tasks: Vec<_> = sites.0.iter().map(|(site, url)| print(site, url)).collect();
-    future::join_all(tasks).await;
-    Ok(())
 }
