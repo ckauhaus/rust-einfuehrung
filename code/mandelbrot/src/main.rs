@@ -1,12 +1,13 @@
 #![allow(unused_imports)]
 
 use crossbeam::{channel::bounded, thread};
+use image::png::PNGEncoder;
 use num::Complex;
 use std::path::{Path, PathBuf};
+use std::u8::MAX;
 use structopt::StructOpt;
 
-const MAXITER: u32 = 0xff;
-
+// Image dimensions both in pixels and in the complex plane
 #[derive(Debug)]
 struct Dimen {
     width: u32,
@@ -32,84 +33,76 @@ impl Dimen {
         )
     }
 
+    // Parallel rendering: render single line
     #[cfg(feature = "parallel")]
-    fn render_line(&self, y: u32) -> Vec<u8> {
-        let mut line = vec![0; self.width as usize];
+    fn render_line(&self, y: u32, line: &mut [u8]) {
         for x in 0..self.width {
             let point = self.px2complex(x, y);
-            if let Some(i) = escape_time(point) {
-                line[x as usize] = (MAXITER - i) as u8
-            }
+            let i = escape_time(point);
+            line[x as usize] = MAX - i;
         }
-        line
     }
 
+    // Parallel rendering: buffer & thread management, IPC
     #[cfg(feature = "parallel")]
     fn render(&self) -> Vec<u8> {
+        // pixel buffer
         let mut pxs = vec![0; (self.width * self.height) as usize];
-        let (y_tx, y_rx) = bounded(8);
-        thread::scope(|sc| {
-            let threads: Vec<_> = (0..num_cpus::get())
-                .map(|_| {
-                    sc.spawn(|_| {
-                        let mut lines = Vec::new();
-                        for y in &y_rx {
-                            lines.push((y, self.render_line(y)));
-                        }
-                        lines
-                    })
-                })
-                .collect();
-            for y in 0..self.height {
-                y_tx.send(y).expect("IPC channel broken");
+        // yet unprocessed part of the pixel buffer
+        let mut pxs_rest: &mut [u8] = &mut pxs;
+        let cpus = num_cpus::get();
+        let (y_tx, y_rx) = bounded::<(u32, &mut [u8])>(cpus);
+        thread::scope(move |sc| {
+            for _ in 0..cpus {
+                let y_rx = y_rx.clone();
+                sc.spawn(move |_| {
+                    // receive mutable borrow over channel and fill it
+                    for (y, mut line) in y_rx {
+                        self.render_line(y, &mut line);
+                    }
+                });
             }
-            drop(y_tx);
-            for t in threads {
-                let res = t.join().expect("thread panic");
-                for (y, line) in res {
-                    pxs[(y * self.width) as usize..((y + 1) * self.width) as usize]
-                        .copy_from_slice(&line);
-                }
+            for y in 0..self.height {
+                // chop first line off and hand it as mutable slice to worker thread
+                let (head_line, tail) = pxs_rest.split_at_mut(self.width as usize);
+                y_tx.send((y, head_line)).expect("IPC channel broken");
+                pxs_rest = tail;
             }
         })
         .expect("thread panic");
         pxs
     }
 
+    // Sequential rendering
     #[cfg(not(feature = "parallel"))]
     fn render(&self) -> Vec<u8> {
         let mut pxs = vec![0; (self.width * self.height) as usize];
         for y in 0..self.height {
             for x in 0..self.width {
                 let point = self.px2complex(x, y);
-                if let Some(i) = escape_time(point) {
-                    pxs[(y * self.width + x) as usize] = (MAXITER - i) as u8;
-                }
+                let i = escape_time(point);
+                pxs[(y * self.width + x) as usize] = MAX - i;
             }
         }
         pxs
     }
 }
 
-fn escape_time(c: Complex<f64>) -> Option<u32> {
+// Mandelbrot iteration, see https://en.wikipedia.org/wiki/Mandelbrot_set
+fn escape_time(c: Complex<f64>) -> u8 {
     let mut z = Complex::new(0.0, 0.0);
-    for i in 0..MAXITER {
+    for i in 0..MAX {
         z = z * z + c;
         if z.norm_sqr() > 4.0 {
-            return Some(i);
+            return i;
         }
     }
-    None
+    MAX
 }
 
 fn write(pxs: &[u8], dimen: &Dimen, filename: &Path) -> Result<(), std::io::Error> {
     let f = std::fs::File::create(filename)?;
-    image::png::PNGEncoder::new(f).encode(
-        pxs,
-        dimen.width as u32,
-        dimen.height as u32,
-        image::ColorType::Gray(8),
-    )
+    PNGEncoder::new(f).encode(pxs, dimen.width, dimen.height, image::ColorType::Gray(8))
 }
 
 /// Mandelbrot set generator
@@ -152,16 +145,16 @@ mod test {
 
     #[test]
     fn should_escape() {
-        assert_eq!(escape_time(Complex::new(0.5, 0.0)), Some(4));
-        assert_eq!(escape_time(Complex::new(2.0, -0.1)), Some(0));
-        assert_eq!(escape_time(Complex::new(-1.0, -0.4)), Some(6));
+        assert_eq!(escape_time(Complex::new(0.5, 0.0)), 4);
+        assert_eq!(escape_time(Complex::new(2.0, -0.1)), 0);
+        assert_eq!(escape_time(Complex::new(-1.0, -0.4)), 6);
     }
 
     #[test]
     fn should_not_escape() {
-        assert_eq!(escape_time(Complex::default()), None);
-        assert_eq!(escape_time(Complex::new(-2.0, 0.0)), None);
-        assert_eq!(escape_time(Complex::new(0.0, 0.5)), None);
+        assert_eq!(escape_time(Complex::default()), MAX);
+        assert_eq!(escape_time(Complex::new(-2.0, 0.0)), MAX);
+        assert_eq!(escape_time(Complex::new(0.0, 0.5)), MAX);
     }
 
     #[test]
