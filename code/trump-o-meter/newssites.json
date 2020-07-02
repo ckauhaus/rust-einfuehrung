@@ -1,14 +1,13 @@
-{
-    "Bild": "https://www.bild.de/",
-    "Spiegel": "https://www.spiegel.de/",
-    "Focus": "https://www.focus.de/",
-    "ntv": "https://www.n-tv.de/",
-    "Welt": "https://www.welt.de/",
-    "Zeit": "https://www.zeit.de/index",
-    "FAZ": "https://www.faz.net/aktuell/",
-    "Süddeutsche": "https://www.sueddeutsche.de/",
-    "Stern": "https://stern.de/",
-    "WAZ": "https://www.waz.de/",
-    "Merkur": "https://www.merkur.de/",
-    "T-Online": "https://www.t-online.de/"
-}
+[
+    {"name": "Bild", "url": "https://www.bild.de/"},
+    {"name": "Spiegel", "url": "https://www.spiegel.de/"},
+    {"name": "Focus", "url": "https://www.focus.de/"},
+    {"name": "ntv", "url": "https://www.n-tv.de/"},
+    {"name": "Welt", "url": "https://www.welt.de/"},
+    {"name": "FAZ", "url": "https://www.faz.net/aktuell/"},
+    {"name": "Süddeutsche", "url": "https://www.sueddeutsche.de/"},
+    {"name": "Stern", "url": "https://stern.de/"},
+    {"name": "WAZ", "url": "https://www.waz.de/"},
+    {"name": "Merkur", "url": "https://www.merkur.de/"},
+    {"name": "T-Online", "url": "https://www.t-online.de/"}
+]
