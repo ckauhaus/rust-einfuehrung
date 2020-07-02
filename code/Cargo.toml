@@ -6,3 +6,6 @@ edition = "2018"
 
 [workspace]
 members = ["guess", "mandelbrot", "trump-o-meter", "temperature"]
+
+[profile.release]
+lto = "thin"

@@ -1,11 +1,12 @@
 use futures::future::join_all;
 use serde::Deserialize;
 use std::error::Error;
+use std::fmt;
 use std::fs::File;
 use tokio::runtime::Runtime;
 
 // What we are looking for
-static PERSONS: &[&str] = &["Merkel", "Trump"];
+static PERSONS: [&str; 2] = ["Merkel", "Trump"];
 
 #[derive(Deserialize, Debug)]
 struct Newssite {
@@ -15,36 +16,35 @@ struct Newssite {
 
 #[derive(Debug)]
 struct Occurences {
-    site: Newssite,
+    name: String,
     // Counts indexed by person
-    counts: Result<Vec<usize>, reqwest::Error>,
+    counts: Result<Vec<usize>, Box<dyn Error>>,
 }
 
-impl Occurences {
-    fn print(&self) {
+impl fmt::Display for Occurences {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:12}", self.name)?;
         match &self.counts {
-            Ok(counts) => {
-                print!("{:12}", self.site.name);
-                for (n, name) in PERSONS.iter().enumerate() {
-                    print!(" {:30}", name[0..1].repeat(counts[n]))
-                }
-                println!()
-            }
-            Err(e) => println!("{:12} Error: {}", self.site.name, e),
+            Ok(counts) => Ok(for (n, name) in PERSONS.iter().enumerate() {
+                write!(f, " {:30}", name[0..1].repeat(counts[n]))?;
+            }),
+            Err(e) => write!(f, " Error: {}", e),
         }
     }
 }
 
-async fn count_persons(url: &str) -> Result<Vec<usize>, reqwest::Error> {
-    eprintln!("{}: downloading", url);
-    let body = reqwest::get(url).await?.error_for_status()?.text().await?;
-    Ok(PERSONS.iter().map(|p| body.matches(p).count()).collect())
-}
-
 impl Newssite {
+    async fn count_persons(url: &str) -> Result<Vec<usize>, Box<dyn Error>> {
+        eprintln!("{}: downloading", url);
+        let body = reqwest::get(url).await?.error_for_status()?.text().await?;
+        Ok(PERSONS.iter().map(|p| body.matches(p).count()).collect())
+    }
+
     async fn check(self) -> Occurences {
-        let counts = count_persons(&self.url).await;
-        Occurences { site: self, counts }
+        Occurences {
+            name: self.name,
+            counts: Self::count_persons(&self.url).await,
+        }
     }
 }
 
@@ -56,7 +56,7 @@ fn run(sites: Vec<Newssite>) -> Vec<Occurences> {
 fn main() -> Result<(), Box<dyn Error>> {
     let sites: Vec<Newssite> = serde_json::from_reader(File::open("newssites.json")?)?;
     for occ in run(sites) {
-        occ.print();
+        println!("{}", occ);
     }
     Ok(())
 }
