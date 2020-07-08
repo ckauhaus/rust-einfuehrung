@@ -1,1 +1,9 @@
+/bin/
+*.egg-info
+/lib/
+/lib64
 *.png
+__pycache__/
+/pyvenv.cfg
+/share/
+*.so
