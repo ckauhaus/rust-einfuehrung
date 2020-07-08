@@ -1,11 +1,9 @@
-#[cfg(feature = "parallel")]
-use crossbeam::{channel::bounded, thread};
+use gumdrop::Options;
 use image::png::PNGEncoder;
 use image::ColorType;
 use num::Complex;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use structopt::StructOpt;
 
 // Mandelbrot iteration, see https://en.wikipedia.org/wiki/Mandelbrot_set
 fn escape_time(c: Complex<f64>) -> Option<u8> {
@@ -58,64 +56,6 @@ impl Dimen {
             self.origin.im + (self.height - y) as f64 * self.window.im / self.height as f64,
         )
     }
-
-    // Parallel rendering: render single line
-    #[cfg(feature = "parallel")]
-    fn render_line(&self, y: u32, line: &mut [u8]) {
-        for x in 0..self.width {
-            let point = self.px2complex(x, y);
-            line[x as usize] = match escape_time(point) {
-                Some(x) => u8::MAX - x,
-                None => 0,
-            }
-        }
-    }
-
-    // Parallel rendering: buffer & thread management, IPC
-    #[cfg(feature = "parallel")]
-    fn render(&self) -> Vec<u8> {
-        // pixel buffer
-        let mut pxs = vec![0; (self.width * self.height) as usize];
-        // yet unprocessed part of the pixel buffer
-        let mut pxs_rest: &mut [u8] = &mut pxs;
-        let cpus = num_cpus::get();
-        let (y_tx, y_rx) = bounded::<(u32, &mut [u8])>(cpus);
-        thread::scope(move |sc| {
-            for _ in 0..cpus {
-                let y_rx = y_rx.clone();
-                sc.spawn(move |_| {
-                    // receive mutable borrow over channel and fill it
-                    for (y, mut line) in y_rx {
-                        self.render_line(y, &mut line);
-                    }
-                });
-            }
-            for y in 0..self.height {
-                // chop first line off and hand it as mutable slice to worker thread
-                let (head_line, tail) = pxs_rest.split_at_mut(self.width as usize);
-                y_tx.send((y, head_line)).expect("IPC channel broken");
-                pxs_rest = tail;
-            }
-        })
-        .expect("thread panic");
-        pxs
-    }
-
-    // Sequential rendering
-    #[cfg(not(feature = "parallel"))]
-    fn render(&self) -> Vec<u8> {
-        let mut pxs = vec![0; (self.width * self.height) as usize];
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let point = self.px2complex(x, y);
-                pxs[(y * self.width + x) as usize] = match escape_time(point) {
-                    Some(i) => u8::MAX - i,
-                    None => 0,
-                }
-            }
-        }
-        pxs
-    }
 }
 
 #[test]
@@ -124,36 +64,53 @@ fn coord_trans() {
     assert_eq!(d.px2complex(20, 30), Complex::new(-0.5, -0.5));
 }
 
+fn render(d: &Dimen) -> Vec<Vec<u8>> {
+    let mut buf: Vec<Vec<u8>> = (0..d.height).map(|_| vec![0; d.width as usize]).collect();
+    for y in 0..d.height {
+        for x in 0..d.width {
+            let point = d.px2complex(x, y);
+            buf[y as usize][x as usize] = match escape_time(point) {
+                Some(i) => u8::MAX - i,
+                None => 0,
+            }
+        }
+    }
+    buf
+}
+
 fn write(pxs: &[u8], dimen: &Dimen, filename: &Path) -> Result<(), Box<dyn Error>> {
     let f = std::fs::File::create(filename)?;
     Ok(PNGEncoder::new(f).encode(pxs, dimen.width, dimen.height, ColorType::L8)?)
 }
 
 /// Mandelbrot set generator
-#[derive(StructOpt, Debug)]
+#[derive(Options, Debug)]
 struct Opt {
     /// Image width ins pixels
-    #[structopt(short, long, default_value = "640")]
+    #[options(default = "1024")]
     width: u32,
     /// Image height in pixels
-    #[structopt(short, long, default_value = "480")]
+    #[options(default = "768")]
     height: u32,
     /// Bottom left corner of the window into the complex plane
-    #[structopt(short, long, default_value = "-1.2+0.35i")]
+    #[options(meta = "COMPLEX", default = "-1.2+0.2i")]
     bottom_left: Complex<f64>,
     /// Top right corner of the window into the complex plane
-    #[structopt(short, long, default_value = "-1.0+0.2i")]
+    #[options(meta = "COMPLEX", default = "-1.0+0.35i")]
     top_right: Complex<f64>,
     /// Where to write the PNG file
-    #[structopt(parse(from_os_str))]
+    #[options(free)]
     filename: PathBuf,
+    /// Show command line usage
+    #[options(no_short, help_flag)]
+    help: bool,
 }
 
 fn main() {
-    let opt = Opt::from_args();
+    let opt = Opt::parse_args_default_or_exit();
     let dimen = Dimen::new(opt.width, opt.height, opt.bottom_left, opt.top_right);
-    let data = dimen.render();
-    if let Err(e) = write(&data, &dimen, &opt.filename) {
+    let pixels = render(&dimen);
+    if let Err(e) = write(&pixels.concat(), &dimen, &opt.filename) {
         eprintln!(
             "Error: Cannot write output to '{}': {}",
             opt.filename.display(),
