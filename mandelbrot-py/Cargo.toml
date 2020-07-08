@@ -13,7 +13,7 @@ py = [ "pyo3" ]
 
 [dependencies]
 gumdrop = "0.8"
-image = "0.23"
+image = { version = "0.23", default_features = false, features = ["png"]}
 num = "0.3"
 
 [dependencies.pyo3]

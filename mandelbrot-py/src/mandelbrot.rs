@@ -1,7 +1,9 @@
 use num::Complex;
 
+type C = Complex<f64>;
+
 /// Mandelbrot iteration, see https://en.wikipedia.org/wiki/Mandelbrot_set
-fn escape_time(c: Complex<f64>) -> Option<u8> {
+fn escape_time(c: C) -> Option<u8> {
     let mut z = Complex::new(0.0, 0.0);
     for i in 0..u8::MAX {
         z = z * z + c;
@@ -31,18 +33,13 @@ fn test_should_not_escape() {
 pub struct Dimen {
     pub width: usize,
     pub height: usize,
-    origin: Complex<f64>,
-    window: Complex<f64>,
+    origin: C,
+    window: C,
 }
 
 impl Dimen {
     /// Computes window dimensions from bottom right and top left point on the complex plane.
-    pub fn new(
-        width: usize,
-        height: usize,
-        bot_left: Complex<f64>,
-        top_right: Complex<f64>,
-    ) -> Self {
+    pub fn new(width: usize, height: usize, bot_left: C, top_right: C) -> Self {
         Self {
             width,
             height,
@@ -52,7 +49,7 @@ impl Dimen {
     }
 
     /// Coordinate transformation from image pixels into the complex plane.
-    fn px2complex(&self, x: usize, y: usize) -> Complex<f64> {
+    fn px2complex(&self, x: usize, y: usize) -> C {
         Complex::new(
             self.origin.re + x as f64 * self.window.re / self.width as f64,
             self.origin.im + (self.height - y) as f64 * self.window.im / self.height as f64,
@@ -78,12 +75,7 @@ fn render_line(line: &mut [u8], d: &Dimen, y: usize) {
 
 /// Renders Mandelbrot set as grayscale image. Result is a collection of luminance values in row
 /// major order.
-pub fn render(
-    width: usize,
-    height: usize,
-    bot_left: Complex<f64>,
-    top_right: Complex<f64>,
-) -> Vec<u8> {
+pub fn render(width: usize, height: usize, bot_left: C, top_right: C) -> Vec<u8> {
     let dimen = Dimen::new(width, height, bot_left, top_right);
     let mut buf = vec![0; width * height];
     for y in 0..height {
